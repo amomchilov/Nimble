@@ -7,6 +7,11 @@
 
 @implementation NMBExceptionCapture
 
+
++ (void)load {
+	[[XCTestObservationCenter sharedTestObservationCenter] addTestObserver:[CurrentTestCaseTracker sharedInstance]];
+}
+
 - (nonnull instancetype)initWithHandler:(void(^ _Nullable)(NSException * _Nonnull))handler finally:(void(^ _Nullable)(void))finally {
     self = [super init];
     if (self) {

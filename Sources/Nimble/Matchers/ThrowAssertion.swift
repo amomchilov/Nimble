@@ -82,6 +82,8 @@ public func catchBadInstruction(block: @escaping () -> Void) -> BadInstructionEx
 // swiftlint:enable all
 #endif
 
+import XCTest
+
 public func throwAssertion<Out>() -> Predicate<Out> {
     return Predicate { actualExpression in
     #if os(watchOS)
@@ -127,7 +129,73 @@ public func throwAssertion<Out>() -> Predicate<Out> {
             You can silence this error by placing the test case inside an #if arch(x86_64) || arch(arm64) conditional \
             statement.
             """
-        fatalError(message)
+
+		if let currentTestCase = Thread.current.threadDictionary["QuickSpec.current"] as? XCTestCase {
+			reportSkippedTest(XCTSkip(message), currentTestCase)
+		}
+
+		return PredicateResult(bool: true, message: message.appended(message: "; \(message)"))
     #endif
     }
+}
+
+fileprivate func reportSkippedTest(_ testSkippedError: XCTSkip, _ currentTestCase: XCTestCase) {
+	#if !canImport(Darwin)
+		return // This functionality is only supported by Apple's proprietary XCTest, not by swift-corelibs-xctest
+	#endif
+
+	guard let testRun = currentTestCase.testRun else { fatalError() } // TODO: improve this
+
+	let selector = NSSelectorFromString("recordSkipWithDescription:sourceCodeContext:")
+
+	guard testRun.responds(to: selector) else {
+		print("""
+		[Quick Warning]: The internals of Apple's XCTestCaseRun have changed, as it no longer responds to
+			the -[XCTSkip \(NSStringFromSelector(selector))] message necessary to report skipped tests to Xcode.
+
+			If nobody else has done so yet, please submit an issue to https://github.com/Quick/Quick/issues
+
+			For now, we'll just benignly ignore skipped tests.
+		""")
+	   return
+	}
+
+	guard let skippedTestContextAny = testSkippedError.errorUserInfo["XCTestErrorUserInfoKeySkippedTestContext"] else {
+		print("""
+		[Quick Warning]: The internals of Apple's XCTestCaseRun have changed.
+			We expected the `errorUserInfo` dictionary of the XCTSKip error to contain a value for the key
+			"XCTestErrorUserInfoKeySkippedTestContext", but it didn't.
+		""")
+		return
+	}
+
+	// Uses an internal type "XCTSkippedTestContext", but "NSObject" will be sufficient for `perform(_:with:_with:)`.
+	guard let skippedTestContext = skippedTestContextAny as? NSObject else {
+		print("""
+		[Quick Warning]: The internals of Apple's XCTestCaseRun have changed.
+			We expected `skippedTestContextAny` to have type `NSObject`,
+			but we got an object of type \(type(of: skippedTestContextAny))
+		""")
+		return
+	}
+
+
+	guard let sourceCodeContextAny = skippedTestContext.value(forKey: "sourceCodeContext") else {
+		print("""
+		[Quick Warning]: The internals of Apple's XCTestCaseRun have changed.
+			We expected `XCTSkippedTestContext` to have a `sourceCodeContext` property, but it did not.
+		""")
+		return
+	}
+
+	guard let sourceCodeContext = sourceCodeContextAny as? XCTSourceCodeContext else {
+		print("""
+			[Quick Warning]: The internals of Apple's XCTestCaseRun have changed.
+			We expected `XCTSkippedTestContext.sourceCodeContext` to have type `XCTSourceCodeContext`,
+			but we got an object of type \(type(of: sourceCodeContextAny)).
+		""")
+		return
+	}
+
+	testRun.perform(selector, with: testSkippedError.message, with: sourceCodeContext)
 }

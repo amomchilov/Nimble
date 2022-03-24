@@ -16,3 +16,16 @@
  * @see `TestOutputStringConvertible`
  */
 extern NSString *_Nonnull NMBStringify(id _Nullable anyObject) __attribute__((warn_unused_result));
+
+@interface FooClass : NSObject
+@end
+
+@implementation FooClass
+
+- (void)sayHello {
+
+	NSLog(@"Hello, World!");
+
+}
+
+@end
